@@ -858,10 +858,20 @@ class NestedTreeRepository extends AbstractTreeRepository
      * If any error is detected it will return an array
      * with a list of errors found on tree
      *
+     * @param array $options
+     *
+     * $options['treeRootNode']  = (object) Optional tree root node to recover, if not the whole forest (default: null)
+     *                             Option is only available for forests, not for single trees
+     *
      * @return array|bool - true on success,error list on failure
      */
-    public function verify()
+    public function verify(array $options = array())
     {
+        $defaultOptions = array(
+            'treeRootNode'  => null,
+        );
+        $options = array_merge($defaultOptions, $options);
+
         if (!$this->childCount()) {
             return true; // tree is empty
         }
@@ -872,6 +882,10 @@ class NestedTreeRepository extends AbstractTreeRepository
         if (isset($config['root'])) {
             $trees = $this->getRootNodes();
             foreach ($trees as $tree) {
+                // if a root node is specified, verify only it
+                if ($options['treeRootNode'] && $options['treeRootNode'] !== $tree) {
+                    continue;
+                }
                 $this->verifyTree($errors, $tree);
             }
         } else {
@@ -886,11 +900,25 @@ class NestedTreeRepository extends AbstractTreeRepository
      *
      * Tries to recover the tree
      *
-     * @param bool $verifyFirst Whether to verify the tree first, before attempting recovery
+     * @param array $options
+     *
+     * $options['treeRootNode']  = (object) Optional tree root node to recover, if not the whole forest (default: null)
+     *                             Option is only available for forests, not for single trees
+     * $options['skipVerify']    = (bool) Whether to skip verification and recover anyway (default: false)
+     * $options['sortByField']   = (string) Sort siblings by specified field while recovering (default: null)
+     * $options['sortDirection'] = (ASC|DESC) The order to sort siblings in, when sortByField is specified (default: 'ASC')
      */
-    public function recover($verifyFirst = true, $sortByField = null, $direction = 'ASC')
+    public function recover(array $options = array())
     {
-        if ($verifyFirst && $this->verify() === true) {
+        $defaultOptions = array(
+            'treeRootNode'  => null,
+            'skipVerify'    => false,
+            'sortByField'   => null,
+            'sortDirection' => 'ASC',
+        );
+        $options = array_merge($defaultOptions, $options);
+
+        if (!$options['skipVerify'] && ($this->verify() === true)) {
             return;
         }
         $meta = $this->getClassMetadata();
@@ -898,9 +926,9 @@ class NestedTreeRepository extends AbstractTreeRepository
         $self = $this;
         $em = $this->_em;
 
-        $doRecover = function ($root, &$count, $level) use ($meta, $config, $self, $em, $sortByField, $direction, &$doRecover) {
+        $doRecover = function ($root, &$count, $level) use ($meta, $config, $self, $em, $options, &$doRecover) {
             $lft = $count++;
-            foreach ($self->getChildren($root, true, $sortByField, $direction) as $child) {
+            foreach ($self->getChildren($root, true, $options['sortByField'], $options['sortDirection']) as $child) {
                 $doRecover($child, $count, $level+1);
             }
             $rgt = $count++;
@@ -913,7 +941,12 @@ class NestedTreeRepository extends AbstractTreeRepository
         };
 
         if (isset($config['root'])) {
-            foreach ($this->getRootNodes($sortByField, $direction) as $root) {
+            foreach ($this->getRootNodes($options['sortByField'], $options['sortDirection']) as $root) {
+                // if a root node is specified, recover only it
+                if ($options['treeRootNode'] && $options['treeRootNode'] !== $root) {
+                    continue;
+                }
+
                 // reset on every root node
                 $count = 1;
                 $level = isset($config['level_base']) ? $config['level_base'] : 0;
@@ -923,7 +956,7 @@ class NestedTreeRepository extends AbstractTreeRepository
         } else {
             $count = 1;
             $level = isset($config['level_base']) ? $config['level_base'] : 0;
-            foreach ($this->getChildren(null, true) as $root) {
+            foreach ($this->getChildren(null, true, $options['sortByField'], $options['sortDirection']) as $root) {
                 $doRecover($root, $count, $level);
             }
         }
