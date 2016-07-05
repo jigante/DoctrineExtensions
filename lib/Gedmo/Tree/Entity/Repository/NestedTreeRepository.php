@@ -860,7 +860,7 @@ class NestedTreeRepository extends AbstractTreeRepository
      *
      * @param array $options
      *
-     * $options['treeRootNode']  = (object) Optional tree root node to recover, if not the whole forest (default: null)
+     * $options['treeRootNode']  = (object) Optional tree root node to verify, if not the whole forest (default: null)
      *                             Option is only available for forests, not for single trees
      *
      * @return array|bool - true on success,error list on failure
