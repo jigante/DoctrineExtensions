@@ -902,6 +902,7 @@ class NestedTreeRepository extends AbstractTreeRepository
      *
      * @param array $options
      *
+     * $options['flush']         = (object) Flush entity manager after each root node is recovered (default: false)
      * $options['treeRootNode']  = (object) Optional tree root node to recover, if not the whole forest (default: null)
      *                             Option is only available for forests, not for single trees
      * $options['skipVerify']    = (bool) Whether to skip verification and recover anyway (default: false)
@@ -911,6 +912,7 @@ class NestedTreeRepository extends AbstractTreeRepository
     public function recover(array $options = array())
     {
         $defaultOptions = array(
+            'flush'         => false,
             'treeRootNode'  => null,
             'skipVerify'    => false,
             'sortByField'   => null,
@@ -940,6 +942,7 @@ class NestedTreeRepository extends AbstractTreeRepository
             $em->persist($root);
         };
 
+        // if it's a forest
         if (isset($config['root'])) {
             foreach ($this->getRootNodes($options['sortByField'], $options['sortDirection']) as $root) {
                 // if a root node is specified, recover only it
@@ -952,12 +955,20 @@ class NestedTreeRepository extends AbstractTreeRepository
                 $level = isset($config['level_base']) ? $config['level_base'] : 0;
 
                 $doRecover($root, $count, $level);
+
+                if ($options['flush']) {
+                    $em->flush();
+                }
             }
         } else {
             $count = 1;
             $level = isset($config['level_base']) ? $config['level_base'] : 0;
             foreach ($this->getChildren(null, true, $options['sortByField'], $options['sortDirection']) as $root) {
                 $doRecover($root, $count, $level);
+
+                if ($options['flush']) {
+                    $em->flush();
+                }
             }
         }
     }
