@@ -896,7 +896,81 @@ class NestedTreeRepository extends AbstractTreeRepository
     }
 
     /**
-     * NOTE: flush your entity manager after
+     * Tries to recover the tree, avoiding entity object hydration and using DQL
+     *
+     * NOTE: DQL UPDATE statements are ported directly into a Database UPDATE statement and therefore bypass any locking
+     * scheme, events and do not increment the version column. Entities that are already loaded into the persistence
+     * context will NOT be synced with the updated database state.
+     * It is recommended to call EntityManager#clear() and retrieve new instances of any affected entity.
+     *
+     * @param array $options
+     *
+     * $options['sortByField']   = (string) Sort siblings by specified field while recovering (default: null)
+     * $options['sortDirection'] = (ASC|DESC) The order to sort siblings in, when sortByField is specified (default: 'ASC')
+     */
+    public function recoverFast(array $options = array())
+    {
+        $defaultOptions = array(
+            'sortByField'   => null,
+            'sortDirection' => 'ASC',
+        );
+        $options = array_merge($defaultOptions, $options);
+
+        $meta = $this->getClassMetadata();
+        $config = $this->listener->getConfiguration($this->_em, $meta->name);
+        $self = $this;
+        $em = $this->_em;
+
+        $updateQb = $em->createQueryBuilder()
+            ->update($meta->getName(), 'node')
+            ->set('node.'.$config['left'], ':left')
+            ->set('node.'.$config['right'], ':right')
+            ->where('node.id = :id');
+        if (isset($config['level'])) {
+            $updateQb->set('node.'.$config['level'], ':level');
+        }
+
+        $doRecover = function ($root, &$count, $level) use ($meta, $config, $self, $em, $options, $updateQb, &$doRecover) {
+            $rootEntity = $em->getReference($meta->getName(), $root['node_id']);
+            $lft = $count++;
+            $childrenQuery = $self->getChildrenQuery($rootEntity, true, $options['sortByField'], $options['sortDirection']);
+            foreach ($childrenQuery->getScalarResult() as $child) {
+                $doRecover($child, $count, $level+1);
+            }
+            $rgt = $count++;
+
+            $updateQb
+                ->setParameter('left', $lft)
+                ->setParameter('right', $rgt)
+                ->setParameter('id', $root['node_id'])
+                ->setParameter('level', $level)
+                ->getQuery()->execute();
+        };
+
+        // if it's a forest
+        if (isset($config['root'])) {
+            $rootNodesQuery = $this->getRootNodesQuery($options['sortByField'], $options['sortDirection']);
+            $roots = $rootNodesQuery->getScalarResult();
+            foreach ($roots as $root) {
+                // reset on every root node
+                $count = 1;
+                $level = isset($config['level_base']) ? $config['level_base'] : 0;
+                $doRecover($root, $count, $level);
+                $em->clear();
+            }
+        } else {
+            $count = 1;
+            $level = isset($config['level_base']) ? $config['level_base'] : 0;
+            $childrenQuery = $this->getChildrenQuery(null, true, $options['sortByField'], $options['sortDirection']);
+            foreach ($childrenQuery->getScalarResult() as $root) {
+                $doRecover($root, $count, $level);
+                $em->clear();
+            }
+        }
+    }
+
+    /**
+     * NOTE: flush your entity manager after, unless the 'flush' option has been set to true
      *
      * Tries to recover the tree
      *
