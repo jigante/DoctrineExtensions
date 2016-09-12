@@ -21,7 +21,8 @@ use Gedmo\Sluggable\SluggableListener;
 use Gedmo\Tree\TreeListener;
 use Gedmo\Timestampable\TimestampableListener;
 use Gedmo\Loggable\LoggableListener;
-use Doctrine\ORM\Repository\DefaultRepositoryFactory;
+use Doctrine\ORM\Repository\DefaultRepositoryFactory as DefaultRepositoryFactoryORM;
+use Doctrine\ODM\MongoDB\Repository\DefaultRepositoryFactory as DefaultRepositoryFactoryODM;
 
 /**
  * Base test case contains common mock objects
@@ -42,7 +43,7 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
     /**
      * Initialized document managers
      *
-     * @var array
+     * @var DocumentManager[]
      */
     private $dms = array();
 
@@ -75,8 +76,8 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
      * DocumentManager mock object together with
      * annotation mapping driver and database
      *
-     * @param string                                     $dbName
-     * @param Doctrine\ODM\MongoDB\Mapping\Driver\Driver $mappingDriver
+     * @param string        $dbName
+     * @param MappingDriver $mappingDriver
      *
      * @return DocumentManager
      */
@@ -103,14 +104,14 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
      * DocumentManager mock object with
      * annotation mapping driver
      *
-     * @param string                                     $dbName
-     * @param Doctrine\ODM\MongoDB\Mapping\Driver\Driver $mappingDriver
+     * @param string        $dbName
+     * @param MappingDriver $mappingDriver
      *
      * @return DocumentManager
      */
     protected function getMockMappedDocumentManager($dbName, MappingDriver $mappingDriver = null)
     {
-        $conn = $this->getMock('Doctrine\\MongoDB\\Connection');
+        $conn = $this->getMockBuilder('Doctrine\\MongoDB\\Connection')->getMock();
         $config = $this->getMockAnnotatedODMMongoDBConfig($dbName, $mappingDriver);
 
         $dm = DocumentManager::create($conn, $config, $this->getEventManager());
@@ -123,8 +124,8 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
      * annotation mapping driver and pdo_sqlite
      * database in memory
      *
-     * @param array                              $fixtures
-     * @param Doctrine\ORM\Mapping\Driver\Driver $mappingDriver
+     * @param array         $fixtures
+     * @param MappingDriver $mappingDriver
      *
      * @return EntityManager
      */
@@ -153,32 +154,33 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
      * EntityManager mock object with
      * annotation mapping driver
      *
-     * @param Doctrine\ORM\Mapping\Driver\Driver $mappingDriver
+     * @param MappingDriver $mappingDriver
      *
      * @return EntityManager
      */
     protected function getMockMappedEntityManager(MappingDriver $mappingDriver = null)
     {
-        $driver = $this->getMock('Doctrine\DBAL\Driver');
+        $driver = $this->getMockBuilder('Doctrine\DBAL\Driver')->getMock();
         $driver->expects($this->once())
             ->method('getDatabasePlatform')
-            ->will($this->returnValue($this->getMock('Doctrine\DBAL\Platforms\MySqlPlatform')));
+            ->will($this->returnValue($this->getMockBuilder('Doctrine\DBAL\Platforms\MySqlPlatform')->getMock()));
 
-        $conn = $this->getMock('Doctrine\DBAL\Connection', array(), array(array(), $driver));
+        $conn = $this->getMockBuilder('Doctrine\DBAL\Connection')
+            ->setConstructorArgs(array(), $driver)
+            ->getMock();
+
         $conn->expects($this->once())
             ->method('getEventManager')
-            ->will($this->returnValue($this->getEventManager()));
+            ->will($this->returnValue($evm ?: $this->getEventManager()));
 
-        $config = $this->getMockAnnotatedORMConfig($mappingDriver);
-        $em = EntityManager::create($conn, $config);
-
-        return $em;
+        $config = $this->getMockAnnotatedConfig();
+        return EntityManager::create($conn, $config);
     }
 
     /**
      * Creates default mapping driver
      *
-     * @return \Doctrine\ORM\Mapping\Driver\Driver
+     * @return MappingDriver
      */
     protected function getDefaultORMMetadataDriverImplementation()
     {
@@ -188,7 +190,7 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
     /**
      * Creates default mapping driver
      *
-     * @return \Doctrine\ODM\MongoDB\Mapping\Driver\Driver
+     * @return MappingDriver
      */
     protected function getDefaultMongoODMMetadataDriverImplementation()
     {
@@ -218,78 +220,33 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
      * Get annotation mapping configuration
      *
      * @param string                                     $dbName
-     * @param Doctrine\ODM\MongoDB\Mapping\Driver\Driver $mappingDriver
+     * @param MappingDriver $mappingDriver
      *
-     * @return Doctrine\ORM\Configuration
+     * @return \Doctrine\ORM\Configuration
      */
     private function getMockAnnotatedODMMongoDBConfig($dbName, MappingDriver $mappingDriver = null)
     {
-        $config = $this->getMock('Doctrine\\ODM\\MongoDB\\Configuration');
-        $config->expects($this->once())
-            ->method('getProxyDir')
-            ->will($this->returnValue(__DIR__.'/../../temp'));
-
-        $config->expects($this->once())
-            ->method('getProxyNamespace')
-            ->will($this->returnValue('Proxy'));
-
-        $config->expects($this->once())
-            ->method('getHydratorDir')
-            ->will($this->returnValue(__DIR__.'/../../temp'));
-
-        $config->expects($this->once())
-            ->method('getHydratorNamespace')
-            ->will($this->returnValue('Hydrator'));
-
-        $config->expects($this->any())
-            ->method('getDefaultDB')
-            ->will($this->returnValue($dbName));
-
-        $config->expects($this->once())
-            ->method('getAutoGenerateProxyClasses')
-            ->will($this->returnValue(true));
-
-        $config->expects($this->once())
-            ->method('getAutoGenerateHydratorClasses')
-            ->will($this->returnValue(true));
-
-        $config->expects($this->once())
-            ->method('getClassMetadataFactoryName')
-            ->will($this->returnValue('Doctrine\\ODM\\MongoDB\\Mapping\\ClassMetadataFactory'));
-
-        $config
-            ->expects($this->any())
-            ->method('getMongoCmd')
-            ->will($this->returnValue('$'))
-        ;
-
-        $config
-            ->expects($this->any())
-            ->method('getDefaultCommitOptions')
-            ->will($this->returnValue(array('safe' => true)))
-        ;
-
-        if (null === $mappingDriver) {
-            $mappingDriver = $this->getDefaultMongoODMMetadataDriverImplementation();
-        }
-
-        $config->expects($this->any())
-            ->method('getMetadataDriverImpl')
-            ->will($this->returnValue($mappingDriver));
-
+        $config = new \Doctrine\ODM\MongoDB\Configuration();
+        $config->setProxyDir(__DIR__.'/../../temp');
+        $config->setProxyNamespace('Proxies');
+        $config->setHydratorDir(__DIR__.'/../../temp');
+        $config->setHydratorNamespace('Hydrators');
+        $config->setMetadataDriverImpl($mappingDriver ?: $this->getDefaultMongoODMMetadataDriverImplementation());
+        $config->setDefaultDB("gedmo_extensions_test");
+        $config->addFilter("soft-deleteable", 'Gedmo\\SoftDeleteable\\Filter\\ODM\\SoftDeleteableFilter');
         return $config;
     }
 
     /**
      * Get annotation mapping configuration for ORM
      *
-     * @param Doctrine\ORM\Mapping\Driver\Driver $mappingDriver
+     * @param MappingDriver $mappingDriver
      *
-     * @return Doctrine\ORM\Configuration
+     * @return \Doctrine\ORM\Configuration
      */
     private function getMockAnnotatedORMConfig(MappingDriver $mappingDriver = null)
     {
-        $config = $this->getMock('Doctrine\ORM\Configuration');
+        $config = $this->getMockBuilder('Doctrine\ORM\Configuration')->getMock();
         $config->expects($this->once())
             ->method('getProxyDir')
             ->will($this->returnValue(__DIR__.'/../../temp'));
@@ -338,7 +295,7 @@ abstract class BaseTestCaseOM extends \PHPUnit_Framework_TestCase
         $config
             ->expects($this->once())
             ->method('getRepositoryFactory')
-            ->will($this->returnValue(new DefaultRepositoryFactory()));
+            ->will($this->returnValue(new DefaultRepositoryFactoryORM()));
 
         return $config;
     }
