@@ -247,6 +247,8 @@ trait NestedTreeRepositoryTrait
      * @param object $node
      * @param array  $options
      *
+     * $options['includeNode']          = (bool) Whether to include the node itself (default: true)
+     *
      * @return \Doctrine\ORM\Query
      */
     public function getPathQuery($node, array $options = array())
@@ -259,6 +261,8 @@ trait NestedTreeRepositoryTrait
      *
      * @param object $node
      * @param array  $options
+     *
+     * $options['includeNode']          = (bool) Whether to include the node itself (default: true)
      *
      * @return array - list of Nodes in path
      */
@@ -380,6 +384,8 @@ trait NestedTreeRepositoryTrait
 
     /**
      * {@inheritDoc}
+     * @param string|array  $sortByField - field name to sort by or array of fields
+     * @param string|array  $direction   - sort direction : "ASC" or "DESC", or array of sort directions per sort field
      */
     public function getChildrenQueryBuilder($node = null, $direct = false, $sortByField = null, $direction = 'ASC', $includeNode = false)
     {
