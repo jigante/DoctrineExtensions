@@ -158,7 +158,7 @@ class NestedTreeRootRepositoryTest extends BaseTestCaseORM
         $childOpen = '';
         $childClose = '';
         $nodeDecorator = function ($node) {
-            return str_repeat('-', $node['level']).$node['title']."\n";
+            return str_repeat('-', $node['level']-1).$node['title']."\n";
         };
 
         $decoratedCliTree = $repo->childrenHierarchy(
@@ -175,7 +175,7 @@ class NestedTreeRootRepositoryTest extends BaseTestCaseORM
         // check support of the closures in rootClose
         $rootClose = function () {return '</ul><!--rootCloseClosure-->';};
         $childOpen = function (&$node) {
-            return '<li class="depth'.$node['level'].'">';
+            return '<li class="depth'.($node['level']-1).'">';
         };
         // check support of the closures in childClose
         $childClose = function (&$node) {
