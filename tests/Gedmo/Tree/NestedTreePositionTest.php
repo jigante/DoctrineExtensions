@@ -228,7 +228,7 @@ class NestedTreePositionTest extends BaseTestCaseORM
 
         $this->em->flush();
         $dql = 'SELECT COUNT(c) FROM '.self::ROOT_CATEGORY.' c';
-        $dql .= ' WHERE c.lft = 1 AND c.rgt = 2 AND c.parent IS NULL AND c.level = 0';
+        $dql .= ' WHERE c.lft = 1 AND c.rgt = 2 AND c.parent IS NULL AND c.level = 1';
         $count = $this->em->createQuery($dql)->getSingleScalarResult();
         $this->assertEquals(6, $count);
 

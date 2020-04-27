@@ -475,9 +475,11 @@ class NestedTreeRootRepositoryTest extends BaseTestCaseORM
         // test fast recover
 
         $dql = 'UPDATE '.self::CATEGORY.' node';
-        $dql .= ' SET node.lft = 5';
-        $dql .= ' WHERE node.id = 4';
+        $dql .= ' SET node.lft = 1';
+        $dql .= ' WHERE node.id = 8';
         $this->em->createQuery($dql)->execute();
+
+        $this->em->clear(); // must clear cached entities
 
         $this->assertGreaterThan(0, count($repo->verify()));
 
@@ -485,6 +487,7 @@ class NestedTreeRootRepositoryTest extends BaseTestCaseORM
             'sortByField'   => 'title',
             'sortDirection' => 'ASC',
         ));
+        $this->em->clear(); // must clear cached entities
 
         $this->assertTrue($repo->verify());
     }
