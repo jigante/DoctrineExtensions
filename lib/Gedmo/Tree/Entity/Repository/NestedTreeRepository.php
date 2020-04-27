@@ -135,13 +135,21 @@ class NestedTreeRepository extends AbstractTreeRepository
      * Get the Tree path query builder by given $node
      *
      * @param object $node
+     * @param array  $options
+     *
+     * $options['includeNode'] = (bool) Whether to include the node itself (default: true)
      *
      * @throws InvalidArgumentException - if input is not valid
      *
      * @return \Doctrine\ORM\QueryBuilder
      */
-    public function getPathQueryBuilder($node)
+    public function getPathQueryBuilder($node, array $options = array())
     {
+        $defaultOptions = array(
+            'includeNode' => true,
+        );
+        $options = array_merge($defaultOptions, $options);
+
         $meta = $this->getClassMetadata();
         if (!$node instanceof $meta->name) {
             throw new InvalidArgumentException("Node is not related to this repository");
@@ -156,10 +164,17 @@ class NestedTreeRepository extends AbstractTreeRepository
         $qb = $this->getQueryBuilder();
         $qb->select('node')
             ->from($config['useObjectClass'], 'node')
-            ->where($qb->expr()->lte('node.'.$config['left'], $left))
-            ->andWhere($qb->expr()->gte('node.'.$config['right'], $right))
             ->orderBy('node.'.$config['left'], 'ASC')
         ;
+
+        if ($options['includeNode']) {
+            $qb->where($qb->expr()->lte('node.'.$config['left'], $left))
+               ->andWhere($qb->expr()->gte('node.'.$config['right'], $right));
+        } else {
+            $qb->where($qb->expr()->lt('node.'.$config['left'], $left))
+               ->andWhere($qb->expr()->gt('node.'.$config['right'], $right));
+        }
+
         if (isset($config['root'])) {
             $rootId = $wrapped->getPropertyValue($config['root']);
             $qb->andWhere($qb->expr()->eq('node.'.$config['root'], ':rid'));
@@ -173,24 +188,60 @@ class NestedTreeRepository extends AbstractTreeRepository
      * Get the Tree path query by given $node
      *
      * @param object $node
+     * @param array  $options
+     *
+     * $options['includeNode'] = (bool) Whether to include the node itself (default: true)
      *
      * @return \Doctrine\ORM\Query
      */
-    public function getPathQuery($node)
+    public function getPathQuery($node, array $options = array())
     {
-        return $this->getPathQueryBuilder($node)->getQuery();
+        return $this->getPathQueryBuilder($node, $options)->getQuery();
     }
 
     /**
      * Get the Tree path of Nodes by given $node
      *
      * @param object $node
+     * @param array  $options
+     *
+     * $options['includeNode'] = (bool) Whether to include the node itself (default: true)
      *
      * @return array - list of Nodes in path
      */
-    public function getPath($node)
+    public function getPath($node, array $options = array())
     {
-        return $this->getPathQuery($node)->getResult();
+        return $this->getPathQuery($node, $options)->getResult();
+    }
+
+    /**
+     * Get the Tree path of Nodes by given $node as a string
+     *
+     * @param object $node
+     * @param array  $options
+     *
+     * $options['includeNode']  = (bool) Whether to include the node itself (default: true)
+     * $options['separator']    = (string) The string separating the nodes of the tree
+     * $options['stringMethod'] = Entity method returning its displayable name.
+     *                            If not provided, entity must have __toString method
+     * @return string
+     */
+    public function getPathAsString($node, array $options = array())
+    {
+        $defaultOptions = array(
+            'includeNode'  => true,
+            'separator'    => ' > ',
+            'stringMethod' => null,
+        );
+        $options        = array_merge($defaultOptions, $options);
+
+        $path      = array();
+        $pathNodes = $this->getPath($node, $options);
+        foreach ($pathNodes as $pathNode) {
+            $path[] = $options['stringMethod'] ? $pathNode->{$options['stringMethod']}() : (string)$pathNode;
+        }
+
+        return implode($options['separator'], $path);
     }
 
     /**
@@ -242,12 +293,9 @@ class NestedTreeRepository extends AbstractTreeRepository
         if (!$sortByField) {
             $qb->orderBy('node.'.$config['left'], 'ASC');
         } elseif (is_array($sortByField)) {
-            $fields = '';
-            foreach ($sortByField as $field) {
-                $fields .= 'node.'.$field.',';
+            foreach ($sortByField as $key => $field) {
+                $qb->addOrderBy('node.'.$field, is_array($direction) ? $direction[$key] : $direction);
             }
-            $fields = rtrim($fields, ',');
-            $qb->orderBy($fields, $direction);
         } else {
             if ($meta->hasField($sortByField) && in_array(strtolower($direction), array('asc', 'desc'))) {
                 $qb->orderBy('node.'.$sortByField, $direction);
@@ -630,6 +678,7 @@ class NestedTreeRepository extends AbstractTreeRepository
             $left = $wrapped->getPropertyValue($config['left']);
             $rootId = isset($config['root']) ? $wrapped->getPropertyValue($config['root']) : null;
 
+            // if node has no children
             if ($right == $left + 1) {
                 $this->removeSingle($wrapped);
                 $this->listener
@@ -653,6 +702,7 @@ class NestedTreeRepository extends AbstractTreeRepository
 
                 // in case if root node is removed, children become roots
                 if (isset($config['root']) && !$parent) {
+                    // get node's children
                     $qb = $this->getQueryBuilder();
                     $qb->select('node.'.$pk, 'node.'.$config['left'], 'node.'.$config['right'])
                         ->from($config['useObjectClass'], 'node');
@@ -661,12 +711,14 @@ class NestedTreeRepository extends AbstractTreeRepository
                     $qb->setParameter('pid', $nodeId);
                     $nodes = $qb->getQuery()->getArrayResult();
 
+                    // go through each of the node's children
                     foreach ($nodes as $newRoot) {
                         $left = $newRoot[$config['left']];
                         $right = $newRoot[$config['right']];
                         $rootId = $newRoot[$pk];
                         $shift = -($left - 1);
 
+                        // set the root of this child node and its children to the newly formed tree
                         $qb = $this->getQueryBuilder();
                         $qb->update($config['useObjectClass'], 'node');
                         $qb->set('node.'.$config['root'], ':rid');
@@ -677,6 +729,7 @@ class NestedTreeRepository extends AbstractTreeRepository
                         $qb->andWhere($qb->expr()->lte('node.'.$config['right'], $right));
                         $qb->getQuery()->getSingleScalarResult();
 
+                        // Set the parent to NULL for this child node, i.e. make it root
                         $qb = $this->getQueryBuilder();
                         $qb->update($config['useObjectClass'], 'node');
                         $qb->set('node.'.$config['parent'], ':pid');
@@ -687,6 +740,7 @@ class NestedTreeRepository extends AbstractTreeRepository
                         $qb->setParameter('rid', $rootId);
                         $qb->getQuery()->getSingleScalarResult();
 
+                        // fix left, right and level values for the newly formed tree
                         $this->listener
                             ->getStrategy($this->_em, $meta->name)
                             ->shiftRangeRL($this->_em, $config['useObjectClass'], $left, $right, $shift, $rootId, $rootId, - 1);
@@ -695,6 +749,7 @@ class NestedTreeRepository extends AbstractTreeRepository
                             ->shiftRL($this->_em, $config['useObjectClass'], $right, -2, $rootId);
                     }
                 } else {
+                    // set parent of all direct children to be the parent of the node being deleted
                     $qb = $this->getQueryBuilder();
                     $qb->update($config['useObjectClass'], 'node');
                     $qb->set('node.'.$config['parent'], ':pid');
@@ -707,6 +762,7 @@ class NestedTreeRepository extends AbstractTreeRepository
                     }
                     $qb->getQuery()->getSingleScalarResult();
 
+                    // fix left, right and level values for the node's children
                     $this->listener
                         ->getStrategy($this->_em, $meta->name)
                         ->shiftRangeRL($this->_em, $config['useObjectClass'], $left, $right, $shift, $rootId, $rootId, - 1);
@@ -728,17 +784,18 @@ class NestedTreeRepository extends AbstractTreeRepository
     }
 
     /**
-     * Reorders $node's sibling nodes and child nodes,
+     * Reorders $node's child nodes,
      * according to the $sortByField and $direction specified
      *
      * @param object|null $node        - node from which to start reordering the tree; null will reorder everything
      * @param string      $sortByField - field name to sort by
      * @param string      $direction   - sort direction : "ASC" or "DESC"
      * @param boolean     $verify      - true to verify tree first
+     * @param boolean     $recursive   - true to also reorder grandchildren recursively
      *
      * @return bool|null
      */
-    public function reorder($node, $sortByField = null, $direction = 'ASC', $verify = true)
+    public function reorder($node, $sortByField = null, $direction = 'ASC', $verify = true, $recursive = true)
     {
         $meta = $this->getClassMetadata();
         if ($node instanceof $meta->name || $node === null) {
@@ -753,7 +810,7 @@ class NestedTreeRepository extends AbstractTreeRepository
                 $right = $wrapped->getPropertyValue($config['right']);
                 $left = $wrapped->getPropertyValue($config['left']);
                 $this->moveDown($node, true);
-                if ($left != ($right - 1)) {
+                if ($recursive && $left != ($right - 1)) {
                     $this->reorder($node, $sortByField, $direction, false);
                 }
             }
@@ -779,10 +836,20 @@ class NestedTreeRepository extends AbstractTreeRepository
      * If any error is detected it will return an array
      * with a list of errors found on tree
      *
+     * @param array $options
+     *
+     * $options['treeRootNode']  = (object) Optional tree root node to verify, if not the whole forest (default: null)
+     *                             Option is only available for forests, not for single trees
+     *
      * @return array|bool - true on success,error list on failure
      */
-    public function verify()
+    public function verify(array $options = array())
     {
+        $defaultOptions = array(
+            'treeRootNode'  => null,
+        );
+        $options = array_merge($defaultOptions, $options);
+
         if (!$this->childCount()) {
             return true; // tree is empty
         }
@@ -793,6 +860,10 @@ class NestedTreeRepository extends AbstractTreeRepository
         if (isset($config['root'])) {
             $trees = $this->getRootNodes();
             foreach ($trees as $tree) {
+                // if a root node is specified, verify only it
+                if ($options['treeRootNode'] && $options['treeRootNode'] !== $tree) {
+                    continue;
+                }
                 $this->verifyTree($errors, $tree);
             }
         } else {
@@ -803,15 +874,108 @@ class NestedTreeRepository extends AbstractTreeRepository
     }
 
     /**
-     * NOTE: flush your entity manager after
+     * Tries to recover the tree, avoiding entity object hydration and using DQL
      *
+     * NOTE: DQL UPDATE statements are ported directly into a Database UPDATE statement and therefore bypass any locking
+     * scheme, events and do not increment the version column. Entities that are already loaded into the persistence
+     * context will NOT be synced with the updated database state.
+     * It is recommended to call EntityManager#clear() and retrieve new instances of any affected entity.
+     *
+     * @param array $options
+     *
+     * $options['sortByField']   = (string) Sort siblings by specified field while recovering (default: null)
+     * $options['sortDirection'] = (ASC|DESC) The order to sort siblings in, when sortByField is specified (default: 'ASC')
+     *
+     * @throws \Doctrine\Common\Persistence\Mapping\MappingException
+     */
+    public function recoverFast(array $options = array())
+    {
+        $defaultOptions = array(
+            'sortByField'   => null,
+            'sortDirection' => 'ASC',
+        );
+        $options = array_merge($defaultOptions, $options);
+
+        $meta = $this->getClassMetadata();
+        $config = $this->listener->getConfiguration($this->getEntityManager(), $meta->name);
+        $self = $this;
+        $em = $this->getEntityManager();
+
+        $updateQb = $em->createQueryBuilder()
+                       ->update($meta->getName(), 'node')
+                       ->set('node.'.$config['left'], ':left')
+                       ->set('node.'.$config['right'], ':right')
+                       ->where('node.id = :id');
+        if (isset($config['level'])) {
+            $updateQb->set('node.'.$config['level'], ':level');
+        }
+
+        $doRecover = function ($root, &$count, $level) use ($meta, $config, $self, $em, $options, $updateQb, &$doRecover) {
+            $rootEntity = $em->getReference($meta->getName(), $root['node_id']);
+            $lft = $count++;
+            $childrenQuery = $self->getChildrenQuery($rootEntity, true, $options['sortByField'], $options['sortDirection']);
+            foreach ($childrenQuery->getScalarResult() as $child) {
+                $doRecover($child, $count, $level+1);
+            }
+            $rgt = $count++;
+
+            $updateQb
+                ->setParameter('left', $lft)
+                ->setParameter('right', $rgt)
+                ->setParameter('id', $root['node_id'])
+                ->setParameter('level', $level)
+                ->getQuery()->execute();
+        };
+
+        // if it's a forest
+        if (isset($config['root'])) {
+            $rootNodesQuery = $this->getRootNodesQuery($options['sortByField'], $options['sortDirection']);
+            $roots = $rootNodesQuery->getScalarResult();
+            foreach ($roots as $root) {
+                // reset on every root node
+                $count = 1;
+                $level = isset($config['level_base']) ? $config['level_base'] : 0;
+                $doRecover($root, $count, $level);
+                $em->clear();
+            }
+        } else {
+            $count = 1;
+            $level = isset($config['level_base']) ? $config['level_base'] : 0;
+            $childrenQuery = $this->getChildrenQuery(null, true, $options['sortByField'], $options['sortDirection']);
+            foreach ($childrenQuery->getScalarResult() as $root) {
+                $doRecover($root, $count, $level);
+                $em->clear();
+            }
+        }
+    }
+
+    /**
+     * NOTE: flush your entity manager after, unless the 'flush' option has been set to true     *
      * Tries to recover the tree
+     *
+     * @param array $options
+     *
+     * $options['flush']         = (object) Flush entity manager after each root node is recovered (default: false)
+     * $options['treeRootNode']  = (object) Optional tree root node to recover, if not the whole forest (default: null)
+     *                             Option is only available for forests, not for single trees
+     * $options['skipVerify']    = (bool) Whether to skip verification and recover anyway (default: false)
+     * $options['sortByField']   = (string) Sort siblings by specified field while recovering (default: null)
+     * $options['sortDirection'] = (ASC|DESC) The order to sort siblings in, when sortByField is specified (default: 'ASC')
      *
      * @return void
      */
-    public function recover()
+    public function recover(array $options = array())
     {
-        if ($this->verify() === true) {
+        $defaultOptions = array(
+            'flush'         => false,
+            'treeRootNode'  => null,
+            'skipVerify'    => false,
+            'sortByField'   => null,
+            'sortDirection' => 'ASC',
+        );
+        $options = array_merge($defaultOptions, $options);
+
+        if (!$options['skipVerify'] && ($this->verify() === true)) {
             return;
         }
         $meta = $this->getClassMetadata();
@@ -819,9 +983,9 @@ class NestedTreeRepository extends AbstractTreeRepository
         $self = $this;
         $em = $this->_em;
 
-        $doRecover = function ($root, &$count, &$lvl) use ($meta, $config, $self, $em, &$doRecover) {
+        $doRecover = function ($root, &$count, &$lvl) use ($meta, $config, $self, $em, $options, &$doRecover) {
             $lft = $count++;
-            foreach ($self->getChildren($root, true) as $child) {
+            foreach ($self->getChildren($root, true, $options['sortByField'], $options['sortDirection']) as $child) {
                 $depth = ($lvl + 1);
                 $doRecover($child, $count, $depth);
             }
@@ -834,17 +998,31 @@ class NestedTreeRepository extends AbstractTreeRepository
             $em->persist($root);
         };
 
+        // if it's a forest
         if (isset($config['root'])) {
-            foreach ($this->getRootNodes() as $root) {
+            foreach ($this->getRootNodes($options['sortByField'], $options['sortDirection']) as $root) {
+                // if a root node is specified, recover only it
+                if ($options['treeRootNode'] && $options['treeRootNode'] !== $root) {
+                    continue;
+                }
+
                 $count = 1; // reset on every root node
-                $lvl = 0;
+                $lvl = isset($config['level_base']) ? $config['level_base'] : 0;
                 $doRecover($root, $count, $lvl);
+
+                if ($options['flush']) {
+                    $em->flush();
+                }
             }
         } else {
             $count = 1;
-            $lvl = 0;
-            foreach ($this->getChildren(null, true) as $root) {
+            $lvl = isset($config['level_base']) ? $config['level_base'] : 0;
+            foreach ($this->getChildren(null, true, $options['sortByField'], $options['sortDirection']) as $root) {
                 $doRecover($root, $count, $lvl);
+
+                if ($options['flush']) {
+                    $em->flush();
+                }
             }
         }
     }
@@ -970,6 +1148,7 @@ class NestedTreeRepository extends AbstractTreeRepository
             return; // loading broken relation can cause infinite loop
         }
 
+        // check for nodes that have right value lower than the left
         $qb = $this->getQueryBuilder();
         $qb->select('node')
             ->from($config['useObjectClass'], 'node')
@@ -1020,7 +1199,26 @@ class NestedTreeRepository extends AbstractTreeRepository
                 } elseif ($right > $parentRight) {
                     $errors[] = "node [{$id}] right is greater than parent`s [{$parentId}] right value";
                 }
+                // check that level of node is exactly after it's parent's level
+                if (isset($config['level'])) {
+                    $parentLevel = $meta->getReflectionProperty($config['level'])->getValue($parent);
+                    $level = $meta->getReflectionProperty($config['level'])->getValue($node);
+                    if ($level != $parentLevel + 1) {
+                        $errors[] = "node [{$id}] should be on the level right after its parent`s [{$parentId}] level";
+                    }
+                }
+
             } else {
+                // check that level of the root node is the base level defined
+                if (isset($config['level'])) {
+                    $baseLevel = isset($config['level_base']) ? $config['level_base'] : 0;
+                    $level = $meta->getReflectionProperty($config['level'])->getValue($node);
+                    if ($level != $baseLevel) {
+                        $errors[] = "node [{$id}] should be on level {$baseLevel}, not {$level}";
+                    }
+                }
+
+                // get number of parents of node, based on left and right values
                 $qb = $this->getQueryBuilder();
                 $qb->select($qb->expr()->count('node.'.$identifier))
                     ->from($config['useObjectClass'], 'node')
