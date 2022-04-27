@@ -61,6 +61,41 @@ final class NestedTreeRootAssociationTest extends BaseTestCaseORM
         static::assertSame($sports->getId(), $sports->getRoot()->getId());
     }
 
+    public function testRemoveParentForNode()
+    {
+        $repo = $this->em->getRepository(self::CATEGORY);
+
+        /** @var RootAssociationCategory $food */
+        $food = $repo->findOneByTitle('Food');
+        $this->assertEquals($food->getId(), $food->getRoot()->getId());
+        $this->assertEquals(0, $food->getLevel());
+        $this->assertEquals(1, $food->getLeft());
+        $this->assertEquals(10, $food->getRight());
+
+        /** @var RootAssociationCategory $fruits */
+        $fruits = $repo->findOneByTitle('Fruits');
+        $this->assertEquals($food->getId(), $fruits->getRoot()->getId());
+        $this->assertEquals(1, $fruits->getLevel());
+        $this->assertEquals(2, $fruits->getLeft());
+        $this->assertEquals(3, $fruits->getRight());
+
+        // Remove node's parent, which should move out the node into a new tree
+        $fruits->setParent(null);
+        $this->em->flush();
+
+        $food = $repo->findOneByTitle('Food');
+        $this->assertEquals($food->getId(), $food->getRoot()->getId());
+        $this->assertEquals(0, $food->getLevel());
+        $this->assertEquals(1, $food->getLeft());
+        $this->assertEquals(8, $food->getRight());
+
+        $fruits = $repo->findOneByTitle('Fruits');
+        $this->assertEquals($fruits->getId(), $fruits->getRoot()->getId());
+        $this->assertEquals(0, $fruits->getLevel());
+        $this->assertEquals(1, $fruits->getLeft());
+        $this->assertEquals(2, $fruits->getRight());
+    }
+
     protected function getUsedEntityFixtures(): array
     {
         return [
