@@ -24,4 +24,10 @@ use Gedmo\Mapping\Annotation\Annotation as GedmoAnnotation;
 #[Attribute(Attribute::TARGET_PROPERTY)]
 final class TreeLevel implements GedmoAnnotation
 {
+    /**
+     * The level which root nodes will have
+     *
+     * @var int
+     */
+    public $base = 0;
 }
