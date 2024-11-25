@@ -17,18 +17,12 @@ use Gedmo\Loggable\LogEntryInterface;
  * @phpstan-template T of object
  *
  * @phpstan-implements LogEntryInterface<T>
- *
- * @ORM\MappedSuperclass
  */
 #[ORM\MappedSuperclass]
 abstract class AbstractLogEntry implements LogEntryInterface
 {
     /**
      * @var int|null
-     *
-     * @ORM\Column(type="integer")
-     * @ORM\Id
-     * @ORM\GeneratedValue
      */
     #[ORM\Column(type: Types::INTEGER)]
     #[ORM\Id]
@@ -39,24 +33,18 @@ abstract class AbstractLogEntry implements LogEntryInterface
      * @var string|null
      *
      * @phpstan-var self::ACTION_CREATE|self::ACTION_UPDATE|self::ACTION_REMOVE|null
-     *
-     * @ORM\Column(type="string", length=8)
      */
     #[ORM\Column(type: Types::STRING, length: 8)]
     protected $action;
 
     /**
      * @var \DateTime|null
-     *
-     * @ORM\Column(name="logged_at", type="datetime")
      */
     #[ORM\Column(name: 'logged_at', type: Types::DATETIME_MUTABLE)]
     protected $loggedAt;
 
     /**
      * @var string|null
-     *
-     * @ORM\Column(name="object_id", length=64, nullable=true)
      */
     #[ORM\Column(name: 'object_id', length: 64, nullable: true)]
     protected $objectId;
@@ -65,32 +53,24 @@ abstract class AbstractLogEntry implements LogEntryInterface
      * @var string|null
      *
      * @phpstan-var class-string<T>|null
-     *
-     * @ORM\Column(name="object_class", type="string", length=191)
      */
     #[ORM\Column(name: 'object_class', type: Types::STRING, length: 191)]
     protected $objectClass;
 
     /**
      * @var int|null
-     *
-     * @ORM\Column(type="integer")
      */
     #[ORM\Column(type: Types::INTEGER)]
     protected $version;
 
     /**
      * @var array|null
-     *
-     * @ORM\Column(type="array", nullable=true)
      */
     #[ORM\Column(type: Types::ARRAY, nullable: true)]
     protected $data;
 
     /**
      * @var string|null
-     *
-     * @ORM\Column(length=191, nullable=true)
      */
     #[ORM\Column(length: 191, nullable: true)]
     protected $username;
